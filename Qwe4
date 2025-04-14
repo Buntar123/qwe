@@ -1,0 +1,109 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.feature_selection import f_classif, RFE
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
+from scipy.stats import pointbiserialr
+from statsmodels.stats.multitest import multipletests
+
+def load_data(malicious_file, legitimate_file):
+    """Загрузка данных из файлов"""
+    def load_file(filename):
+        with open(filename, 'r') as f:
+            return np.array([list(map(float, line.strip().split()[1:11])) for line in f])
+    
+    X_mal = load_file(malicious_file)
+    X_leg = load_file(legitimate_file)
+    X = np.vstack([X_mal, X_leg])
+    y = np.array([1]*len(X_mal) + [0]*len(X_leg))
+    return X, y
+
+def analyze_features(X, y):
+    """Полный pipeline анализа"""
+    results = []
+    
+    # 1. ANOVA с поправкой Бенджамини-Хохберга
+    f_values, p_values = f_classif(X, y)
+    _, p_corrected, _, _ = multipletests(p_values, method='fdr_bh')
+    
+    # 2. Point-Biserial корреляция
+    correlations = [pointbiserialr(X[:, i], y)[0] for i in range(X.shape[1])]
+    
+    # 3. RFE-LDA
+    lda = LinearDiscriminantAnalysis()
+    rfe = RFE(estimator=lda, n_features_to_select=3, step=1)
+    rfe.fit(X, y)
+    
+    # 4. Permutation Importance
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X, y)
+    perm_importance = permutation_importance(rf, X, y, n_repeats=10, random_state=42)
+    
+    # Сбор результатов
+    for i in range(X.shape[1]):
+        results.append({
+            'Коэффициент': i+1,
+            'F-значение (ANOVA)': f_values[i],
+            'p-значение (ANOVA)': p_values[i],
+            'p-значение (скоррект.)': p_corrected[i],
+            'Корреляция': correlations[i],
+            'Ранг (RFE)': rfe.ranking_[i],
+            'Важность (Permutation)': perm_importance.importances_mean[i],
+            'ANOVA_Отобрать': p_corrected[i] < 0.05,
+            'RFE_Отобрать': rfe.support_[i],
+            'Permutation_Отобрать': perm_importance.importances_mean[i] > 0.01
+        })
+    
+    return pd.DataFrame(results)
+
+def visualize_results(df, X, y):
+    """Визуализация результатов"""
+    # Графики распределения для топ-5 коэффициентов по ANOVA
+    plt.figure(figsize=(15, 10))
+    top_anova = df.nsmallest(5, 'p-значение (скоррект.)')['Коэффициент'].values
+    for i, coeff in enumerate(top_anova, 1):
+        plt.subplot(2, 3, i)
+        sns.boxplot(x=y, y=X[:, coeff-1])
+        plt.title(f'Коэффициент {coeff}\n(p={df.loc[coeff-1, "p-значение (скоррект.)"]:.2e})')
+        plt.xticks([0, 1], ['Легитимные', 'Зловредные'])
+    plt.tight_layout()
+    plt.savefig('top_coefficients.png')
+    plt.close()
+
+def get_final_features(df):
+    """Определение финального набора коэффициентов"""
+    # Критерии отбора: значим хотя бы в двух методах
+    df['Финальный_отбор'] = (df['ANOVA_Отобрать'].astype(int) + 
+                            df['RFE_Отобрать'].astype(int) + 
+                            df['Permutation_Отобрать'].astype(int)) >= 2
+    
+    # Убедимся, что отобрано не более 5 коэффициентов
+    final_features = df[df['Финальный_отбор']].nsmallest(5, 'p-значение (скоррект.)')['Коэффициент'].values
+    return final_features
+
+if __name__ == "__main__":
+    # 1. Загрузка данных
+    X, y = load_data('malicious.txt', 'legitimate.txt')
+    
+    # 2. Полный анализ
+    results_df = analyze_features(X, y)
+    
+    # 3. Визуализация
+    visualize_results(results_df, X, y)
+    
+    # 4. Финальный отбор
+    final_features = get_final_features(results_df)
+    print("\n" + "="*50)
+    print("Финальные отобранные коэффициенты:", final_features)
+    
+    # 5. Сохранение результатов
+    results_df.to_csv('feature_selection_report.csv', index=False)
+    print("\nПолный отчёт сохранён в feature_selection_report.csv")
+    print("Визуализация топ-коэффициентов сохранена в top_coefficients.png")
+
+    # 6. Подготовка данных для моделирования
+    X_filtered = X[:, [x-1 for x in final_features]]
+    print("\nДанные для моделирования готовы в X_filtered")
