@@ -1,0 +1,27 @@
+import numpy as np
+import pandas as pd
+from scipy.stats import f_oneway
+from statsmodels.stats.multitest import multipletests
+
+def load_data(mal_path: str, leg_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Загружает данные из файлов"""
+    mal = np.loadtxt(mal_path)
+    leg = np.loadtxt(leg_path)
+    return mal[:, 1:], leg[:, 1:]  # пропускаем имя файла
+
+def anova_fdr(mal: np.ndarray, leg: np.ndarray, alpha: float = 0.01) -> pd.DataFrame:
+    """Выполняет ANOVA с FDR-коррекцией"""
+    p_values = [f_oneway(mal[:, i], leg[:, i])[1] for i in range(mal.shape[1])]
+    _, p_corr, _, _ = multipletests(p_values, method='fdr_bh')
+    
+    return pd.DataFrame({
+        'Feature': [f'K{i+1}' for i in range(len(p_values))],
+        'p_raw': p_values,
+        'p_adj': p_corr,
+        'Significant': p_corr < alpha
+    })
+
+if __name__ == '__main__':
+    mal_data, leg_data = load_data('mal_output.txt', 'leg_output.txt')
+    results = anova_fdr(mal_data, leg_data)
+    print(results.sort_values('p_adj'))
