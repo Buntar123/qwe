@@ -1,0 +1,135 @@
+import numpy as np
+import pandas as pd
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.feature_selection import RFE, f_classif
+from statsmodels.stats.multitest import multipletests
+import sys
+
+def load_data_safe(malicious_file, legitimate_file):
+    """Безопасная загрузка данных с обработкой ошибок"""
+    def load_file(filename):
+        try:
+            data = []
+            with open(filename, 'r') as f:
+                for i, line in enumerate(f, 1):
+                    parts = line.strip().split()
+                    if len(parts) < 11:
+                        print(f"⚠️ Строка {i}: Пропущена (не хватает данных)")
+                        continue
+                    try:
+                        coeffs = list(map(float, parts[1:11]))
+                        data.append(coeffs)
+                    except ValueError:
+                        print(f"⚠️ Строка {i}: Ошибка преобразования данных")
+            return np.array(data)
+        except Exception as e:
+            print(f"🚨 Ошибка загрузки {filename}: {str(e)}")
+            return None
+    
+    print("\n" + "="*50)
+    print("Загрузка данных...")
+    X_mal = load_file(malicious_file)
+    X_leg = load_file(legitimate_file)
+    
+    if X_mal is None or X_leg is None:
+        return None, None
+    
+    if len(X_mal) == 0 or len(X_leg) == 0:
+        print("❌ Один из файлов пуст!")
+        return None, None
+    
+    X = np.vstack([X_mal, X_leg])
+    y = np.array([1]*len(X_mal) + [0]*len(X_leg))
+    print(f"✅ Успешно загружено {len(X)} образцов")
+    return X, y
+
+def analyze_features(X, y):
+    """Анализ с обработкой ошибок вычислений"""
+    results = []
+    constant_features = []
+    
+    # Проверка на константность
+    for i in range(X.shape[1]):
+        if np.all(X[:, i] == X[0, i]):
+            constant_features.append(i+1)
+    
+    try:
+        # ANOVA с обработкой предупреждений
+        with np.errstate(divide='ignore', invalid='ignore'):
+            f_values, p_values = f_classif(X, y)
+        
+        # Поправка Бенджамини-Хохберга
+        if len(p_values) > 0:
+            _, corrected_p, _, _ = multipletests(p_values, method='fdr_bh')
+        else:
+            corrected_p = np.array([])
+        
+        # RFE-LDA
+        lda = LinearDiscriminantAnalysis()
+        rfe = RFE(estimator=lda, n_features_to_select=3, step=1)
+        
+        try:
+            rfe.fit(X, y)
+            ranking = rfe.ranking_
+            support = rfe.support_
+        except Exception as e:
+            print(f"⚠️ Ошибка RFE: {str(e)}")
+            ranking = np.zeros(X.shape[1])
+            support = np.zeros(X.shape[1], dtype=bool)
+        
+        # Сбор результатов
+        for i in range(X.shape[1]):
+            res = {
+                'Коэффициент': i+1,
+                'Константа': (i+1) in constant_features,
+                'F-значение': f_values[i] if i < len(f_values) else np.nan,
+                'p-значение': p_values[i] if i < len(p_values) else np.nan,
+                'p-значение (скоррект.)': corrected_p[i] if i < len(corrected_p) else np.nan,
+                'Ранг (RFE)': ranking[i],
+                'Отобрать (RFE)': support[i]
+            }
+            results.append(res)
+            
+    except Exception as e:
+        print(f"🚨 Критическая ошибка анализа: {str(e)}")
+        return None, None
+    
+    df = pd.DataFrame(results)
+    
+    # Автоматические рекомендации
+    conditions = [
+        (df['Константа']),
+        (df['p-значение (скоррект.)'] < 0.05) & (df['Отобрать (RFE)']),
+        (df['p-значение (скоррект.)'] < 0.05) | (df['Отобрать (RFE)'])
+    ]
+    choices = ['Константа', 'Оставить', 'Проверить']
+    df['Рекомендация'] = np.select(conditions, choices, default='Исключить')
+    
+    return df, constant_features
+
+def main():
+    # Загрузка данных
+    X, y = load_data_safe('malicious.txt', 'legitimate.txt')
+    if X is None:
+        sys.exit(1)
+    
+    # Анализ
+    df, constant_features = analyze_features(X, y)
+    if df is None:
+        sys.exit(1)
+    
+    # Сохранение результатов
+    output_file = 'RFELDA_results.csv'
+    df.to_csv(output_file, index=False)
+    print(f"\nРезультаты сохранены в {output_file}")
+    
+    # Вывод итоговых рекомендаций
+    print("\n" + "="*50)
+    print("Итоговые рекомендации:")
+    print(df[['Коэффициент', 'Рекомендация']].sort_values('Рекомендация'))
+    
+    if constant_features:
+        print(f"\n⚠️ Внимание: Константные коэффициенты {constant_features}")
+
+if __name__ == "__main__":
+    main()
