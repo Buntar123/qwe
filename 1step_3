@@ -1,0 +1,35 @@
+import numpy as np
+import pandas as pd
+from scipy.stats import f_oneway
+from statsmodels.stats.multitest import multipletests
+
+def load_data(mal_path: str, leg_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Загружает данные, игнорируя имена файлов в первой колонке"""
+    mal = np.loadtxt(mal_path, usecols=range(1, 11))  # колонки 1-10 (K1-K10)
+    leg = np.loadtxt(leg_path, usecols=range(1, 11))
+    return mal, leg
+
+def anova_fdr(mal: np.ndarray, leg: np.ndarray, alpha: float = 0.01) -> pd.DataFrame:
+    """Выполняет ANOVA с FDR-коррекцией"""
+    p_values = [f_oneway(mal[:, i], leg[:, i])[1] for i in range(mal.shape[1])]
+    _, p_corr, _, _ = multipletests(p_values, method='fdr_bh')
+    
+    results = pd.DataFrame({
+        'Feature': [f'K{i+1}' for i in range(10)],  # K1-K10
+        'p_raw': p_values,
+        'p_adj': p_corr,
+        'Significant': p_corr < alpha,
+        'Mal_mean': np.mean(mal, axis=0),
+        'Leg_mean': np.mean(leg, axis=0)
+    })
+    return results.sort_values('p_adj')
+
+if __name__ == '__main__':
+    try:
+        mal_data, leg_data = load_data('mal_output.txt', 'leg_output.txt')
+        results = anova_fdr(mal_data, leg_data)
+        print(results.to_markdown(index=False, floatfmt=".5f"))
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        print("Проверьте формат файлов. Ожидается:")
+        print("1 колонка - имя файла, затем 10 чисел через пробел (K1-K10)")
