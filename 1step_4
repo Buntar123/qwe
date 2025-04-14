@@ -1,0 +1,63 @@
+import numpy as np
+import pandas as pd
+from scipy.stats import f_oneway
+from statsmodels.stats.multitest import multipletests
+
+def load_data(mal_path: str, leg_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Загружает данные, пропуская константные признаки"""
+    mal = np.loadtxt(mal_path, usecols=range(1, 11))
+    leg = np.loadtxt(leg_path, usecols=range(1, 11))
+    
+    # Исключаем полностью нулевые признаки (как K3)
+    non_constant = ~np.all(mal == leg, axis=0)
+    return mal[:, non_constant], leg[:, non_constant], non_constant
+
+def anova_fdr(mal: np.ndarray, leg: np.ndarray, mask: np.ndarray, alpha: float = 0.01) -> pd.DataFrame:
+    """ANOVA с FDR только для неконстантных признаков"""
+    p_values = []
+    for i in range(mal.shape[1]):
+        try:
+            p = f_oneway(mal[:, i], leg[:, i])[1]
+        except:
+            p = np.nan  # Для случаев, когда F-тест не работает
+        p_values.append(p)
+    
+    # Применяем FDR только к НЕ-nan значениям
+    valid_idx = ~np.isnan(p_values)
+    p_corr = np.full_like(p_values, np.nan)
+    if any(valid_idx):
+        _, p_corr[valid_idx], _, _ = multipletests(np.array(p_values)[valid_idx], method='fdr_bh')
+    
+    # Собираем результаты с исходными индексами
+    results = []
+    k = 0
+    for i in range(10):  # Всего 10 коэффициентов
+        if mask[i] if i < len(mask) else False:
+            results.append({
+                'Feature': f'K{i+1}',
+                'p_raw': p_values[k],
+                'p_adj': p_corr[k],
+                'Significant': p_corr[k] < alpha if not np.isnan(p_corr[k]) else False,
+                'Mal_mean': np.mean(mal[:, k]),
+                'Leg_mean': np.mean(leg[:, k])
+            })
+            k += 1
+        else:
+            results.append({
+                'Feature': f'K{i+1}',
+                'p_raw': np.nan,
+                'p_adj': np.nan,
+                'Significant': False,
+                'Mal_mean': np.nan,
+                'Leg_mean': np.nan
+            })
+    
+    return pd.DataFrame(results)
+
+if __name__ == '__main__':
+    try:
+        mal_data, leg_data, mask = load_data('mal_output.txt', 'leg_output.txt')
+        results = anova_fdr(mal_data, leg_data, mask)
+        print(results.to_markdown(index=False, floatfmt=".5f"))
+    except Exception as e:
+        print(f"Ошибка: {e}")
