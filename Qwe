@@ -1,0 +1,140 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.feature_selection import RFE, f_classif
+from sklearn.model_selection import cross_val_score
+from scipy.stats import ttest_ind
+from statsmodels.stats.multitest import multipletests
+
+def load_data(malicious_file, legitimate_file):
+    """Загрузка и проверка данных"""
+    def load_file(filename):
+        try:
+            data = []
+            with open(filename, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) < 11:
+                        print(f"Пропуск строки (недостаточно данных): {line.strip()}")
+                        continue
+                    try:
+                        coeffs = list(map(float, parts[1:11]))
+                        data.append(coeffs)
+                    except ValueError:
+                        print(f"Пропуск строки (ошибка данных): {line.strip()}")
+            return np.array(data)
+        except FileNotFoundError:
+            print(f"Файл {filename} не найден!")
+            return None
+    
+    X_mal = load_file(malicious_file)
+    X_leg = load_file(legitimate_file)
+    
+    if X_mal is None or X_leg is None:
+        return None, None
+    
+    X = np.vstack([X_mal, X_leg])
+    y = np.array([1]*len(X_mal) + [0]*len(X_leg))
+    return X, y
+
+def analyze_features(X, y):
+    """Комплексный анализ коэффициентов"""
+    results = []
+    
+    # 1. Проверка на константность
+    constant_features = []
+    for i in range(X.shape[1]):
+        if len(np.unique(X[:, i])) == 1:
+            constant_features.append(i+1)
+    
+    # 2. ANOVA
+    f_values, p_values = f_classif(X, y)
+    _, corrected_p = multipletests(p_values, method='fdr_bh')
+    
+    # 3. RFE-LDA
+    lda = LinearDiscriminantAnalysis()
+    rfe = RFE(estimator=lda, n_features_to_select=3, step=1)
+    rfe.fit(X, y)
+    
+    # 4. T-тесты
+    ttest_results = []
+    for i in range(X.shape[1]):
+        _, p_val = ttest_ind(X[y==1, i], X[y==0, i])
+        ttest_results.append(p_val)
+    
+    # Сбор результатов
+    for i in range(X.shape[1]):
+        results.append({
+            'Коэффициент': i+1,
+            'Константа': (i+1) in constant_features,
+            'F-значение': f_values[i],
+            'p-значение (ANOVA)': p_values[i],
+            'p-значение (скоррект.)': corrected_p[i],
+            'Ранг (RFE)': rfe.ranking_[i],
+            'p-значение (T-тест)': ttest_results[i],
+            'Отобрать (ANOVA)': corrected_p[i] < 0.05,
+            'Отобрать (RFE)': rfe.support_[i]
+        })
+    
+    df = pd.DataFrame(results)
+    
+    # Автоматическая проверка противоречий
+    df['Рекомендация'] = 'Исключить'
+    df.loc[(df['Отобрать (ANOVA)']) | (df['Отобрать (RFE)']), 'Рекомендация'] = 'Проверить'
+    df.loc[(df['Отобрать (ANOVA)']) & (df['Отобрать (RFE)']), 'Рекомендация'] = 'Оставить'
+    df.loc[df['Константа'], 'Рекомендация'] = 'Константа'
+    
+    return df, constant_features
+
+def visualize_results(df, X, y):
+    """Визуализация результатов"""
+    # График важности
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    sns.barplot(data=df, x='Коэффициент', y='F-значение', hue='Рекомендация')
+    plt.title('Важность коэффициентов (ANOVA)')
+    
+    plt.subplot(1, 2, 2)
+    sns.barplot(data=df, x='Коэффициент', y=10-df['Ранг (RFE)'], hue='Рекомендация')
+    plt.title('Важность коэффициентов (RFE-LDA)')
+    plt.ylabel('Важность (10-ранг)')
+    plt.tight_layout()
+    plt.savefig('feature_importance.png')
+    plt.close()
+    
+    # Boxplot для спорных коэффициентов
+    check_coeffs = df[df['Рекомендация'] == 'Проверить']['Коэффициент'].values
+    for coeff in check_coeffs:
+        plt.figure()
+        sns.boxplot(x=y, y=X[:, coeff-1])
+        plt.xticks([0,1], ['Легитимные', 'Зловредные'])
+        plt.title(f'Распределение коэффициента {coeff}')
+        plt.savefig(f'coeff_{coeff}_dist.png')
+        plt.close()
+
+if __name__ == "__main__":
+    # Загрузка данных
+    X, y = load_data('malicious.txt', 'legitimate.txt')
+    if X is None:
+        exit()
+    
+    # Анализ
+    df, constant_features = analyze_features(X, y)
+    
+    # Сохранение
+    df.to_csv('full_analysis.csv', index=False)
+    print("\nРезультаты сохранены в full_analysis.csv")
+    
+    # Визуализация
+    visualize_results(df, X, y)
+    print("Графики сохранены в feature_importance.png и coeff_*_dist.png")
+    
+    # Итоговые рекомендации
+    print("\nИтоговые рекомендации:")
+    print(df[['Коэффициент', 'Рекомендация']].sort_values('Рекомендация'))
+    
+    # Проверка константных коэффициентов
+    if constant_features:
+        print(f"\nВнимание! Константные коэффициенты: {constant_features}")
