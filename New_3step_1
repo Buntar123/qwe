@@ -1,0 +1,62 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с фильтрацией K4, K5, K10"""
+    try:
+        # Загружаем только столбцы 4,5,10 (K4, K5, K10)
+        mal = np.loadtxt(mal_path, usecols=[3, 4, 9])  # Индексы 3,4,9 для K4,K5,K10
+        leg = np.loadtxt(leg_path, usecols=[3, 4, 9])
+        
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, 0], leg[:, 0]]),
+            'K5': np.concatenate([mal[:, 1], leg[:, 1]]),
+            'K10': np.concatenate([mal[:, 2], leg[:, 2]]),
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        return df
+    except Exception as e:
+        raise ValueError(f"Ошибка загрузки: {e}. Проверьте формат файлов.")
+
+def plot_violin_swarm(df: pd.DataFrame):
+    """Violin Plot + Swarm Plot для K4, K5, K10"""
+    plt.figure(figsize=(12, 6))
+    
+    # Настройка стиля
+    sns.set_theme(style="whitegrid")
+    palette = {'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'}
+    
+    # Рисуем Violin Plot
+    sns.violinplot(data=df.melt(id_vars='Class'), 
+                  x='variable', y='value', hue='Class',
+                  split=True, inner='quartile',
+                  palette=palette, alpha=0.7)
+    
+    # Добавляем Swarm Plot
+    sns.swarmplot(data=df.melt(id_vars='Class'), 
+                 x='variable', y='value', hue='Class',
+                 palette={'Malicious': '#D32F2F', 'Legitimate': '#1976D2'},
+                 size=3, alpha=0.8, dodge=True)
+    
+    # Оформление
+    plt.title('Распределение ключевых коэффициентов', fontsize=16, pad=20)
+    plt.xlabel('Коэффициент', fontsize=14)
+    plt.ylabel('Значение', fontsize=14)
+    plt.legend(title='Тип APK', bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    # Сохранение
+    plt.savefig('violin_swarm_k4_k5_k10.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        # Загрузка и визуализация
+        df = load_data('mal_output.txt', 'leg_output.txt')
+        print("Статистика по коэффициентам:")
+        print(df.groupby('Class').describe().round(3).to_markdown())
+        
+        plot_violin_swarm(df)
+    except Exception as e:
+        print(f"Ошибка: {e}")
