@@ -1,0 +1,35 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+def load_data(mal_path: str, leg_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Загружает данные, игнорируя первую колонку с именами файлов"""
+    mal = np.loadtxt(mal_path, usecols=range(1, 11))  # Колонки 1-10 (K1-K10)
+    leg = np.loadtxt(leg_path, usecols=range(1, 11))
+    return mal, leg
+
+def plot_boxplots(mal: np.ndarray, leg: np.ndarray, features: list[str]) -> None:
+    """Строит box-plot для сравнения распределений mal/leg"""
+    plt.figure(figsize=(10, 6))
+    data = [mal[:, i] for i in range(mal.shape[1])] + [leg[:, i] for i in range(leg.shape[1])]
+    labels = [f'{feat}_mal' for feat in features] + [f'{feat}_leg' for feat in features]
+    
+    plt.boxplot(data, labels=labels, patch_artist=True,
+               boxprops=dict(facecolor='lightcoral', color='red'),  # mal - красный
+               whiskerprops=dict(color='black'),
+               capprops=dict(color='black'),
+               medianprops=dict(color='black'))
+    
+    plt.title('Сравнение коэффициентов: зловредные vs легитимные APK')
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        mal_data, leg_data = load_data('mal_output.txt', 'leg_output.txt')
+        features = [f'K{i+1}' for i in range(10)]  # K1-K10
+        plot_boxplots(mal_data, leg_data, features)
+    except Exception as e:
+        print(f"Ошибка: {e}")
