@@ -1,0 +1,77 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_data_with_names(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с пропуском первого столбца (имен файлов)"""
+    try:
+        # Чтение данных с пропуском первого столбца
+        mal = np.loadtxt(mal_path, usecols=range(1, 11))  # Столбцы 1-10 (K1-K10)
+        leg = np.loadtxt(leg_path, usecols=range(1, 11))
+        
+        # Выбор нужных столбцов (K4, K5, K10)
+        k4_idx, k5_idx, k10_idx = 3, 4, 9  # Индексы после удаления первого столбца
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, k4_idx], leg[:, k4_idx]]),
+            'K5': np.concatenate([mal[:, k5_idx], leg[:, k5_idx]]),
+            'K10': np.concatenate([mal[:, k10_idx], leg[:, k10_idx]]),
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        
+        # Проверка первых строк
+        print("\nПервые 3 строки данных:")
+        print("K4 (mal):", mal[:3, k4_idx])
+        print("K5 (leg):", leg[:3, k5_idx])
+        print("K10 (mal):", mal[:3, k10_idx])
+        
+        return df
+    
+    except Exception as e:
+        print(f"\nОшибка загрузки: {e}")
+        print("Убедитесь, что:")
+        print("1. Файлы содержат 11 столбцов (имя + 10 чисел)")
+        print("2. Числовые данные начинаются со второго столбца")
+        print("Пример строки: '39.apk 0.12 0.05 ...' (10 чисел после имени)")
+        exit(1)
+
+def plot_distributions(df: pd.DataFrame):
+    """Визуализация распределений"""
+    plt.figure(figsize=(12, 6))
+    
+    # Violin Plot с Swarm поверх
+    sns.violinplot(data=df.melt(id_vars='Class'), 
+                 x='variable', y='value', hue='Class',
+                 split=True, inner='quartile',
+                 palette={'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'})
+    
+    sns.swarmplot(data=df.melt(id_vars='Class'), 
+                x='variable', y='value', hue='Class',
+                palette={'Malicious': '#C62828', 'Legitimate': '#1565C0'},
+                size=3, alpha=0.7, dodge=True)
+    
+    # Настройки оформления
+    plt.title('Распределение ключевых коэффициентов', fontsize=16)
+    plt.xlabel('Коэффициент', fontsize=14)
+    plt.ylabel('Значение', fontsize=14)
+    plt.xticks([0, 1, 2], ['K4', 'K5', 'K10'])
+    plt.legend(title='Тип APK')
+    plt.grid(axis='y', linestyle='--')
+    
+    plt.tight_layout()
+    plt.savefig('distributions.png', dpi=300)
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        print("[Загрузка данных]...")
+        df = load_data_with_names('mal_output.txt', 'leg_output.txt')
+        
+        print("\n[Статистика]")
+        print(df.groupby('Class').describe().round(3).to_markdown())
+        
+        print("\n[Построение графиков]...")
+        plot_distributions(df)
+        
+    except Exception as e:
+        print(f"Ошибка: {e}")
