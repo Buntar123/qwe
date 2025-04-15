@@ -1,0 +1,102 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+def load_data(mal_path: str, leg_path: str, features: list) -> tuple:
+    """Загрузка данных с выбором конкретных признаков"""
+    try:
+        # Преобразуем имена признаков в индексы (K4->3, K5->4, K10->9)
+        col_indices = [int(feat[1:])-1 for feat in features]
+        mal = np.loadtxt(mal_path, usecols=col_indices)
+        leg = np.loadtxt(leg_path, usecols=col_indices)
+        return mal, leg
+    except Exception as e:
+        raise ValueError(f"Ошибка загрузки: {e}\nПроверьте:\n1. Наличие файлов\n2. Соответствие формата")
+
+def plot_enhanced_boxplots(mal: np.ndarray, leg: np.ndarray, features: list):
+    """Улучшенные box-plot с аннотациями"""
+    plt.figure(figsize=(12, 8))
+    
+    # Конфигурация графиков
+    n_features = len(features)
+    box_width = 0.35
+    positions = np.arange(n_features) * 1.5  # Расположение групп
+    
+    # Цвета и стили
+    mal_color = '#FF6B6B'
+    leg_color = '#4ECDC4'
+    flier_props = dict(marker='o', markersize=5, alpha=0.5)
+    
+    for i in range(n_features):
+        # Box-plot для mal и leg
+        mal_box = plt.boxplot(mal[:, i], positions=[positions[i]-box_width/2],
+                            widths=box_width, patch_artist=True,
+                            flierprops=flier_props)
+        leg_box = plt.boxplot(leg[:, i], positions=[positions[i]+box_width/2],
+                            widths=box_width, patch_artist=True,
+                            flierprops=flier_props)
+        
+        # Заливка цветом
+        for item in ['boxes', 'whiskers', 'caps', 'medians']:
+            plt.setp(mal_box[item], color='#D32F2F')
+            plt.setp(leg_box[item], color='#1976D2')
+        plt.setp(mal_box['boxes'], facecolor=mal_color)
+        plt.setp(leg_box['boxes'], facecolor=leg_color)
+        
+        # Аннотации
+        mal_median = np.median(mal[:, i])
+        leg_median = np.median(leg[:, i])
+        plt.text(positions[i]-box_width/2, mal_median, f'{mal_median:.2f}',
+                ha='center', va='bottom', color='black', fontweight='bold')
+        plt.text(positions[i]+box_width/2, leg_median, f'{leg_median:.2f}',
+                ha='center', va='bottom', color='black', fontweight='bold')
+    
+    # Настройка осей
+    plt.xticks(positions, features, fontsize=12)
+    plt.yticks(fontsize=12)
+    plt.ylabel('Значение коэффициента', fontsize=14)
+    plt.title('Сравнение распределений коэффициентов', fontsize=16, pad=20)
+    
+    # Легенда
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=mal_color, label='Зловредные'),
+        Patch(facecolor=leg_color, label='Легитимные')
+    ]
+    plt.legend(handles=legend_elements, fontsize=12)
+    
+    # Сетка и оформление
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.gca().set_axisbelow(True)
+    plt.tight_layout()
+    
+    # Сохранение и отображение
+    plt.savefig('apk_coefficients_boxplot.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+if __name__ == '__main__':
+    # Конфигурация
+    SELECTED_FEATURES = ['K4', 'K5', 'K10']  # Анализируемые признаки
+    MAL_PATH = 'mal_output.txt'
+    LEG_PATH = 'leg_output.txt'
+    
+    try:
+        # Загрузка и визуализация
+        mal_data, leg_data = load_data(MAL_PATH, LEG_PATH, SELECTED_FEATURES)
+        plot_enhanced_boxplots(mal_data, leg_data, SELECTED_FEATURES)
+        
+        # Дополнительная статистика
+        print("\nДополнительная статистика:")
+        stats = pd.DataFrame({
+            'Feature': SELECTED_FEATURES,
+            'Mal_median': [np.median(mal_data[:, i]) for i in range(len(SELECTED_FEATURES))],
+            'Leg_median': [np.median(leg_data[:, i]) for i in range(len(SELECTED_FEATURES))],
+            'Mal_mean': np.mean(mal_data, axis=0),
+            'Leg_mean': np.mean(leg_data, axis=0),
+            'Mal_std': np.std(mal_data, axis=0),
+            'Leg_std': np.std(leg_data, axis=0)
+        })
+        print(stats.to_markdown(index=False))
+        
+    except Exception as e:
+        print(f"Ошибка выполнения:\n{e}")
