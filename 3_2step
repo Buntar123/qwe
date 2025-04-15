@@ -1,0 +1,52 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def load_data(mal_path: str, leg_path: str, feature_indices: list[int]) -> tuple[np.ndarray, np.ndarray]:
+    """Загружает только указанные коэффициенты (по индексам)"""
+    mal = np.loadtxt(mal_path, usecols=feature_indices)
+    leg = np.loadtxt(leg_path, usecols=feature_indices)
+    return mal, leg
+
+def plot_boxplots(mal: np.ndarray, leg: np.ndarray, feature_names: list[str]) -> None:
+    """Строит box-plot без deprecated параметров"""
+    plt.figure(figsize=(10, 6))
+    
+    # Подготовка данных в правильном формате
+    data = []
+    positions = []
+    for i in range(mal.shape[1]):
+        data.extend([mal[:, i], leg[:, i]])
+        positions.extend([i*2 + 1, i*2 + 2])  # Позиции для mal/leg рядом
+    
+    # Настройка внешнего вида
+    box = plt.boxplot(data, positions=positions, patch_artist=True,
+                    widths=0.6, showfliers=True)
+    
+    # Цвета и подписи
+    colors = ['lightcoral', 'lightblue'] * len(feature_names)
+    for patch, color in zip(box['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_edgecolor('red' if color == 'lightcoral' else 'blue')
+    
+    # Подписи осей
+    plt.xticks([1.5 + 2*i for i in range(len(feature_names))], feature_names)
+    plt.title('Сравнение значимых коэффициентов: mal (красный) vs leg (синий)')
+    plt.ylabel('Значение коэффициента')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # Легенда
+    plt.legend([box['boxes'][0], box['boxes'][1]], ['Зловредные', 'Легитимные'])
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        # Указываем индексы столбцов для K4(3), K5(4), K10(9)
+        feature_indices = [3, 4, 9]  # Нумерация с 0
+        feature_names = ['K4', 'K5', 'K10']
+        
+        mal_data, leg_data = load_data('mal_output.txt', 'leg_output.txt', feature_indices)
+        plot_boxplots(mal_data, leg_data, feature_names)
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        print("Проверьте: 1) Путь к файлам 2) Номера столбцов в feature_indices")
