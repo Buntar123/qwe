@@ -1,0 +1,80 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_and_verify_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с проверкой столбцов и статистики"""
+    try:
+        # Загрузка с проверкой индексов столбцов
+        mal = np.loadtxt(mal_path, usecols=[3, 4, 9])  # K4, K5, K10 (индексы 3,4,9)
+        leg = np.loadtxt(leg_path, usecols=[3, 4, 9])
+        
+        # Проверка первых 5 значений
+        print("\n[Проверка данных] Первые 5 значений:")
+        print("K4 (mal):", mal[:5, 0])
+        print("K5 (leg):", leg[:5, 1])
+        print("K10 (mal):", mal[:5, 2])
+        
+        # Создание DataFrame
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, 0], leg[:, 0]]),
+            'K5': np.concatenate([mal[:, 1], leg[:, 1]]),
+            'K10': np.concatenate([mal[:, 2], leg[:, 2]]),
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        
+        # Проверка статистики
+        print("\n[Проверка] Медианы и STD:")
+        stats = df.groupby('Class').agg({
+            'K4': ['median', 'std'],
+            'K5': ['median', 'std'],
+            'K10': ['median', 'std']
+        }).round(3)
+        print(stats.T.to_markdown())  # Транспонированная таблица
+        
+        return df
+    
+    except Exception as e:
+        raise ValueError(f"Ошибка: {e}\nПроверьте:\n1. Пути к файлам\n2. Индексы столбцов (3,4,9 для K4,K5,K10)")
+
+def plot_verified_violin(df: pd.DataFrame):
+    """Улучшенная визуализация с проверкой данных"""
+    plt.figure(figsize=(12, 6))
+    sns.set_style("whitegrid")
+    
+    # Violin + Swarm Plot
+    ax = sns.violinplot(data=df.melt(id_vars='Class'), 
+                       x='variable', y='value', hue='Class',
+                       split=True, inner='quartile',
+                       palette={'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'})
+    
+    sns.swarmplot(data=df.melt(id_vars='Class'), 
+                 x='variable', y='value', hue='Class',
+                 palette={'Malicious': '#D32F2F', 'Legitimate': '#1976D2'},
+                 size=3, alpha=0.8, dodge=True, ax=ax)
+    
+    # Настройки графика
+    plt.title('Проверенное распределение K4, K5, K10', fontsize=16, pad=20)
+    plt.xlabel('Коэффициент', fontsize=14)
+    plt.ylabel('Значение', fontsize=14)
+    plt.legend(title='Тип APK', bbox_to_anchor=(1.05, 1))
+    plt.xticks([0, 1, 2], ['K4', 'K5', 'K10'])
+    
+    # Сохранение
+    plt.savefig('verified_violin_swarm.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        # Загрузка с проверкой
+        df = load_and_verify_data('mal_output.txt', 'leg_output.txt')
+        
+        # Визуализация
+        plot_verified_violin(df)
+        
+    except Exception as e:
+        print(f"Критическая ошибка: {e}")
+        print("Рекомендации:")
+        print("1. Откройте файлы и проверьте столбцы 4,5,10 (K4,K5,K10)")
+        print("2. Убедитесь, что данные не нулевые")
