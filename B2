@@ -1,0 +1,114 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import gaussian_kde
+
+def load_apk_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с проверкой формата"""
+    try:
+        # Пропускаем первый столбец (имена файлов), берем столбцы 2-11 (K1-K10)
+        mal = np.loadtxt(mal_path, usecols=range(1, 11))
+        leg = np.loadtxt(leg_path, usecols=range(1, 11))
+        
+        # Выбираем только K4 (индекс 3), K5 (4), K10 (9)
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, 3], leg[:, 3]]),
+            'K5': np.concatenate([mal[:, 4], leg[:, 4]]),
+            'K10': np.concatenate([mal[:, 9], leg[:, 9]]),
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        
+        # Проверка первых значений
+        print("\n[Проверка данных] Первые 3 строки:")
+        print(df.head(3))
+        return df
+        
+    except Exception as e:
+        print(f"\nОшибка загрузки: {e}")
+        print("Требуемый формат:")
+        print("Файл должен содержать 11 столбцов: имя_файла + 10 чисел (K1-K10)")
+        exit(1)
+
+def plot_histograms_with_kde(df: pd.DataFrame):
+    """Гистограммы с KDE и эффектом прозрачности"""
+    plt.figure(figsize=(15, 4))
+    plt.suptitle('Гистограммы распределений с KDE', y=1.05, fontsize=14)
+    
+    colors = {'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'}
+    
+    for i, col in enumerate(['K4', 'K5', 'K10'], 1):
+        plt.subplot(1, 3, i)
+        
+        # Гистограмма
+        sns.histplot(data=df, x=col, hue='Class', 
+                    element='step', stat='density',
+                    kde=True, common_norm=False,
+                    palette=colors, alpha=0.5)
+        
+        # Ручное добавление KDE для контроля
+        for cls in ['Malicious', 'Legitimate']:
+            data = df[df['Class'] == cls][col]
+            kde = gaussian_kde(data)
+            x = np.linspace(data.min(), data.max(), 100)
+            plt.plot(x, kde(x), color=colors[cls], 
+                    linewidth=2, label=f'{cls} KDE')
+        
+        plt.title(f'Распределение {col}', fontsize=12)
+        plt.xlabel('Значение коэффициента')
+        plt.ylabel('Плотность')
+        plt.grid(alpha=0.3)
+        plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig('apk_hist_kde.png', dpi=120, bbox_inches='tight')
+    plt.show()
+
+def calculate_effect_sizes(df: pd.DataFrame):
+    """Расчет и визуализация Effect Size"""
+    print("\n[Effect Size] Cohen's d:")
+    effects = {}
+    
+    for col in ['K4', 'K5', 'K10']:
+        mal = df[df['Class'] == 'Malicious'][col]
+        leg = df[df['Class'] == 'Legitimate'][col]
+        pooled_std = np.sqrt((mal.std()**2 + leg.std()**2)/2)
+        d = (mal.mean() - leg.mean()) / pooled_std
+        effects[col] = d
+        print(f"{col}: {d:.3f} ({'сильный' if abs(d)>0.8 else 'средний' if abs(d)>0.5 else 'слабый'} эффект)")
+    
+    # Визуализация
+    plt.figure(figsize=(6, 4))
+    pd.Series(effects).plot.bar(color=['#4CAF50' if abs(d)>0.5 else '#FFC107' for d in effects.values()])
+    plt.axhline(0.5, color='red', linestyle='--', alpha=0.5)
+    plt.title("Сила эффекта (Cohen's d)")
+    plt.ylabel("Значение d")
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.savefig('effect_sizes.png', dpi=120)
+    plt.show()
+
+if __name__ == '__main__':
+    # Конфигурация
+    MAL_FILE = 'mal_output.txt'
+    LEG_FILE = 'leg_output.txt'
+    
+    try:
+        print("[1/3] Загрузка данных...")
+        df = load_apk_data(MAL_FILE, LEG_FILE)
+        
+        print("\n[2/3] Построение гистограмм с KDE...")
+        plot_histograms_with_kde(df)
+        
+        print("\n[3/3] Расчет Effect Size...")
+        calculate_effect_sizes(df)
+        
+        print("\nГотово! Результаты сохранены в:")
+        print("- apk_hist_kde.png")
+        print("- effect_sizes.png")
+        
+    except Exception as e:
+        print(f"\nФатальная ошибка: {e}")
+        print("Рекомендации:")
+        print("1. Проверьте пути к файлам")
+        print("2. Убедитесь в корректности данных")
