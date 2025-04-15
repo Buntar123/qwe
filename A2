@@ -1,0 +1,94 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_data_correctly(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с точным выбором столбцов K4, K5, K10"""
+    try:
+        # Чтение всего файла для проверки
+        mal_full = np.loadtxt(mal_path)
+        leg_full = np.loadtxt(leg_path)
+        
+        # Проверка количества столбцов
+        print(f"\n[Проверка] Столбцов в mal: {mal_full.shape[1]}, leg: {leg_full.shape[1]}")
+        
+        # Индексы столбцов (K4=4, K5=5, K10=10 → индексы 3,4,9 при нумерации с 0)
+        col_indices = [3, 4, 9]  # Именно K4, K5, K10
+        
+        # Проверка первых значений
+        print("\nПервые 3 строки mal (K4,K5,K10):")
+        print(mal_full[:3, col_indices])
+        
+        # Загрузка нужных столбцов
+        mal = mal_full[:, col_indices]
+        leg = leg_full[:, col_indices]
+        
+        # Создание DataFrame
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, 0], leg[:, 0]]),
+            'K5': np.concatenate([mal[:, 1], leg[:, 1]]),
+            'K10': np.concatenate([mal[:, 2], leg[:, 2]]),
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        
+        # Проверка статистики
+        print("\nСтатистика:")
+        stats = df.groupby('Class').agg({
+            'K4': ['median', 'std'],
+            'K5': ['median', 'std'],
+            'K10': ['median', 'std']
+        }).round(3)
+        print(stats.T.to_markdown())  # Транспонированная таблица
+        
+        return df
+    
+    except Exception as e:
+        print(f"\nОшибка: {e}")
+        print("Рекомендации:")
+        print("1. Проверьте, что столбцы K4,K5,K10 существуют в файлах")
+        print("2. Убедитесь, что файлы содержат числовые данные")
+        print("Пример ожидаемого формата:")
+        print("39.apk 0.12 0.05 ... 0.33 ← 10 чисел после имени файла")
+        exit(1)
+
+def plot_final_violin(df: pd.DataFrame):
+    """Финализированная визуализация"""
+    plt.figure(figsize=(12, 6))
+    sns.set_style("whitegrid")
+    
+    # Violin Plot с улучшенными настройками
+    ax = sns.violinplot(data=df.melt(id_vars='Class'), 
+                      x='variable', y='value', hue='Class',
+                      split=True, inner='quart',
+                      palette={'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'},
+                      cut=0)
+    
+    # Swarm Plot с точками
+    sns.swarmplot(data=df.melt(id_vars='Class'), 
+                 x='variable', y='value', hue='Class',
+                 palette={'Malicious': '#C62828', 'Legitimate': '#1565C0'},
+                 size=3, alpha=0.8, dodge=True, ax=ax)
+    
+    # Настройки оформления
+    plt.title('Распределение ключевых коэффициентов\nK4, K5, K10', fontsize=16, pad=20)
+    plt.xlabel('Коэффициент', fontsize=14)
+    plt.ylabel('Значение', fontsize=14)
+    plt.xticks([0, 1, 2], ['K4 (Доступ к данным)', 'K5 (Спец. разрешения)', 'K10 (Неклассифицированные)'])
+    plt.legend(title='Тип APK', bbox_to_anchor=(1.05, 1))
+    
+    # Сохранение
+    plt.savefig('final_violin_plot.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        print("[Загрузка данных]...")
+        df = load_data_correctly('mal_output.txt', 'leg_output.txt')
+        
+        print("\n[Визуализация]...")
+        plot_final_violin(df)
+        
+        print("\nГотово! Результаты сохранены в final_violin_plot.png")
+    except Exception as e:
+        print(f"Фатальная ошибка: {e}")
