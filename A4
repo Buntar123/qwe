@@ -1,0 +1,74 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Загрузка данных с пропуском первого столбца (имен файлов)"""
+    try:
+        # Чтение только числовых данных (столбцы 1-10)
+        mal = np.loadtxt(mal_path, usecols=range(1, 11))
+        leg = np.loadtxt(leg_path, usecols=range(1, 11))
+        
+        # Создаем DataFrame только с нужными коэффициентами
+        df = pd.DataFrame({
+            'K4': np.concatenate([mal[:, 3], leg[:, 3]]),  # 4-й столбец (индекс 3)
+            'K5': np.concatenate([mal[:, 4], leg[:, 4]]),  # 5-й столбец (индекс 4)
+            'K10': np.concatenate([mal[:, 9], leg[:, 9]]), # 10-й столбец (индекс 9)
+            'Class': ['Malicious'] * len(mal) + ['Legitimate'] * len(leg)
+        })
+        return df
+    
+    except Exception as e:
+        print(f"Ошибка загрузки: {e}")
+        print("Требуемый формат файлов:")
+        print("39.apk 0.12 0.05 ... (10 чисел после имени файла)")
+        exit(1)
+
+def get_transposed_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Возвращает транспонированную статистику"""
+    stats = df.groupby('Class').agg(['median', 'std'])
+    return stats.T  # Транспонируем для удобного отображения
+
+def plot_distributions(df: pd.DataFrame):
+    """Улучшенная визуализация распределений"""
+    plt.figure(figsize=(12, 6))
+    
+    # Violin Plot с Swarm поверх
+    sns.violinplot(data=df.melt(id_vars='Class'), 
+                 x='variable', y='value', hue='Class',
+                 split=True, inner='quartile',
+                 palette={'Malicious': '#FF6B6B', 'Legitimate': '#4ECDC4'})
+    
+    sns.swarmplot(data=df.melt(id_vars='Class'), 
+                x='variable', y='value', hue='Class',
+                palette={'Malicious': '#C62828', 'Legitimate': '#1565C0'},
+                size=3, alpha=0.7, dodge=True)
+    
+    # Настройки оформления
+    plt.title('Распределение ключевых коэффициентов', fontsize=16)
+    plt.xlabel('Коэффициент', fontsize=14)
+    plt.ylabel('Значение', fontsize=14)
+    plt.xticks([0, 1, 2], ['K4 (Доступ)', 'K5 (Спец.)', 'K10 (Другие)'])
+    plt.legend(title='Тип APK', bbox_to_anchor=(1.05, 1))
+    plt.grid(axis='y', linestyle='--')
+    
+    plt.tight_layout()
+    plt.savefig('distributions.png', dpi=300)
+    plt.show()
+
+if __name__ == '__main__':
+    try:
+        print("[Загрузка данных]...")
+        df = load_data('mal_output.txt', 'leg_output.txt')
+        
+        print("\n[Статистика]")
+        stats = get_transposed_stats(df)
+        print(stats.round(3).to_markdown())
+        
+        print("\n[Построение графиков]...")
+        plot_distributions(df)
+        
+        print("\nГотово! Результаты сохранены в distributions.png")
+    except Exception as e:
+        print(f"Ошибка: {e}") 
