@@ -1,0 +1,48 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+def load_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """Безопасная загрузка данных из файлов"""
+    try:
+        # Чтение файлов
+        mal_data = [line.split() for line in Path(mal_path).read_text().splitlines() if line.strip()]
+        leg_data = [line.split() for line in Path(leg_path).read_text().splitlines() if line.strip()]
+        
+        # Создание DataFrame
+        columns = ['file'] + [f'K{i}' for i in range(1, 11)]
+        df_mal = pd.DataFrame(mal_data, columns=columns).assign(class_='Malicious')  # Исправлено: class_
+        df_leg = pd.DataFrame(leg_data, columns=columns).assign(class_='Legitimate')
+        
+        # Объединение и конвертация
+        df = pd.concat([df_mal, df_leg])
+        for col in columns[1:]:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df.dropna()
+    
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return pd.DataFrame()
+
+def plot_pairgrid(df: pd.DataFrame):
+    """Визуализация PairGrid"""
+    g = sns.PairGrid(
+        df,
+        vars=['K4', 'K5', 'K10'],
+        hue='class_',  # Исправлено: class_
+        palette={'Legitimate': 'blue', 'Malicious': 'red'},
+        corner=True
+    )
+    g.map_upper(sns.scatterplot, s=10)
+    g.map_diag(sns.histplot, kde=True)
+    g.map_lower(sns.kdeplot, fill=True)
+    g.add_legend()
+    plt.show()
+
+if __name__ == "__main__":
+    data = load_data("mal_output.txt", "leg_output.txt")
+    if not data.empty:
+        plot_pairgrid(data)
+    else:
+        print("Не удалось загрузить данные. Проверьте файлы.")
