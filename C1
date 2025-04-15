@@ -1,0 +1,11 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Данные: df должен содержать колонки 'K4', 'K5', 'K10' и 'class' (Leg/Mal)
+g = sns.PairGrid(df, vars=['K4', 'K5', 'K10'], hue='class', palette={'Legitimate': 'blue', 'Malicious': 'red'})
+g.map_upper(sns.scatterplot, s=15, alpha=0.7)  # Верхняя половина: scatter
+g.map_diag(sns.histplot, kde=True, alpha=0.5)  # Диагональ: гистограмма + KDE
+g.map_lower(sns.kdeplot, fill=True, alpha=0.3)  # Нижняя половина: KDE (плотность)
+g.add_legend(title='APK Type')
+plt.suptitle('PairGrid: K4, K5, K10', y=1.02)
+plt.show()
