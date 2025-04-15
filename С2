@@ -1,0 +1,72 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+# --- 1. Безопасная загрузка данных ---
+def load_data(mal_path: str, leg_path: str) -> pd.DataFrame:
+    """
+    Загружает данные из mal_output.txt и leg_output.txt.
+    Возвращает DataFrame с колонками: ['file', 'K1', ..., 'K10', 'class'].
+    """
+    try:
+        # Чтение файлов с проверкой существования
+        mal_files = Path(mal_path).read_text().splitlines()
+        leg_files = Path(leg_path).read_text().splitlines()
+        
+        # Парсинг строк (формат: "имя_файла K1 K2 ... K10")
+        mal_data = [line.split() for line in mal_files if line.strip()]
+        leg_data = [line.split() for line in leg_files if line.strip()]
+        
+        # Создание DataFrame
+        columns = ['file'] + [f'K{i}' for i in range(1, 11)]
+        df_mal = pd.DataFrame(mal_data, columns=columns).assign(class='Malicious')
+        df_leg = pd.DataFrame(leg_data, columns=columns).assign(class='Legitimate')
+        
+        # Объединение и конвертация чисел
+        df = pd.concat([df_mal, df_leg])
+        for k in [f'K{i}' for i in range(1, 11)]:
+            df[k] = pd.to_numeric(df[k], errors='coerce')
+        return df.dropna()
+    
+    except Exception as e:
+        print(f"Ошибка загрузки: {e}")
+        return pd.DataFrame()
+
+# --- 2. Настройка PairGrid ---
+def plot_pairgrid(df: pd.DataFrame) -> None:
+    """Строит PairGrid для K4, K5, K10."""
+    g = sns.PairGrid(
+        data=df,
+        vars=['K4', 'K5', 'K10'],
+        hue='class',
+        palette={'Legitimate': 'blue', 'Malicious': 'red'},
+        corner=False  # Для компактности (убираем дубликаты)
+    )
+    # Верхняя половина: точечный график
+    g.map_upper(sns.scatterplot, s=15, alpha=0.6, linewidth=0)
+    
+    # Диагональ: гистограмма с KDE
+    g.map_diag(sns.histplot, kde=True, alpha=0.5, element='step')
+    
+    # Нижняя половина: плотность распределения
+    g.map_lower(sns.kdeplot, fill=True, alpha=0.3, levels=5)
+    
+    # Легенда и заголовок
+    g.add_legend(title='Тип APK')
+    plt.suptitle('Анализ взаимосвязей: K4, K5, K10', y=1.02)
+    plt.tight_layout()
+    plt.show()
+
+# --- 3. Запуск анализа ---
+if __name__ == "__main__":
+    # Укажите пути к файлам (замените на актуальные)
+    df = load_data(
+        mal_path="mal_output.txt",
+        leg_path="leg_output.txt"
+    )
+    
+    if not df.empty:
+        plot_pairgrid(df)
+    else:
+        print("Данные не загружены. Проверьте пути к файлам.")
