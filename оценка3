@@ -1,0 +1,64 @@
+from androguard.core.apk import APK
+import json
+import sys
+
+def load_categories(json_path):
+    """Загружает категории разрешений из JSON файла"""
+    with open(json_path) as f:
+        return json.load(f)
+
+def calculate_coefficients(apk_path, categories):
+    """Вычисляет коэффициенты для APK-файла"""
+    try:
+        apk = APK(apk_path)
+        permissions = apk.get_permissions() or []
+        total = len(permissions)
+        
+        if total == 0:
+            return 0.0, 0.0, 0.0
+        
+        dangerous = 0
+        signature = 0
+        unknown = 0
+        
+        for perm in permissions:
+            found = False
+            for cat in categories.values():
+                if perm in cat['permissions']:
+                    found = True
+                    if 'dangerous' in cat['description'].lower():
+                        dangerous += 1
+                    elif 'signature' in cat['description'].lower():
+                        signature += 1
+                    break
+            
+            if not found:
+                unknown += 1
+        
+        return (
+            round(dangerous / total, 4),
+            round(signature / total, 4),
+            round(unknown / total, 4)
+        )
+    
+    except Exception as e:
+        print(f"Error processing APK: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python3 apk_coefficients.py <path/to/apk> <path/to/categories.json>", file=sys.stderr)
+        sys.exit(1)
+    
+    apk_path = sys.argv[1]
+    json_path = sys.argv[2]
+    
+    categories = load_categories(json_path)
+    d_coef, s_coef, u_coef = calculate_coefficients(apk_path, categories)
+    
+    # Вывод в формате: "имя_файла K4 K5 K10"
+    filename = apk_path.split('/')[-1]  # Извлекаем только имя файла
+    print(f"{filename} {d_coef} {s_coef} {u_coef}")
+
+if __name__ == "__main__":
+    main()
