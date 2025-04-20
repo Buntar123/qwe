@@ -1,0 +1,80 @@
+from androguard.core.apk import APK
+import json
+import sys
+
+def load_categories(json_path):
+    """Загружает категории разрешений из JSON файла"""
+    with open(json_path) as f:
+        return json.load(f)
+
+def categorize_permissions(permissions, categories):
+    """Распределяет разрешения по категориям"""
+    dangerous = []
+    signature = []
+    known = []
+    unknown = []
+    
+    for perm in permissions:
+        found = False
+        for cat in categories.values():
+            if perm in cat['permissions']:
+                found = True
+                if 'dangerous' in cat['description'].lower():
+                    dangerous.append(perm)
+                elif 'signature' in cat['description'].lower():
+                    signature.append(perm)
+                else:
+                    known.append(perm)
+                break
+        if not found:
+            unknown.append(perm)
+    
+    return {
+        'dangerous': dangerous,
+        'signature': signature,
+        'known': known,
+        'unknown': unknown
+    }
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python3 perm_analyzer.py <apk_path> <categories_json>")
+        sys.exit(1)
+    
+    apk_path = sys.argv[1]
+    json_path = sys.argv[2]
+    
+    try:
+        # Загрузка APK
+        apk = APK(apk_path)
+        permissions = apk.get_permissions()
+        
+        if not permissions:
+            print("No permissions found in manifest")
+            return
+        
+        # Загрузка категорий
+        categories = load_categories(json_path)
+        
+        # Категоризация
+        perm_groups = categorize_permissions(permissions, categories)
+        
+        # Вывод результатов
+        print(f"\nPermissions analysis for: {apk_path}")
+        print(f"\nTotal permissions: {len(permissions)}")
+        
+        print(f"\nDangerous permissions ({len(perm_groups['dangerous'])}):")
+        print('\n'.join(perm_groups['dangerous']) or "No dangerous permissions")
+        
+        print(f"\nSignature permissions ({len(perm_groups['signature'])}):")
+        print('\n'.join(perm_groups['signature']) or "No signature permissions")
+        
+        print(f"\nUnknown permissions ({len(perm_groups['unknown'])}):")
+        print('\n'.join(perm_groups['unknown']) or "No unknown permissions")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
