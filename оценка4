@@ -1,0 +1,74 @@
+from androguard.core.apk import APK
+import json
+import sys
+
+def load_categories(json_path):
+    """Загружает категории разрешений из JSON файла"""
+    with open(json_path) as f:
+        return json.load(f)
+
+def calculate_coefficients(apk_path, categories):
+    """Вычисляет коэффициенты K4 (Dangerous), K5 (Signature), K10 (Unknown)"""
+    try:
+        apk = APK(apk_path)
+        permissions = apk.get_permissions() or []
+        total = len(permissions)
+        
+        if total == 0:
+            return 0.0, 0.0, 0.0
+        
+        dangerous = 0
+        signature = 0
+        unknown = 0
+        
+        for perm in permissions:
+            found = False
+            for cat in categories.values():
+                if perm in cat['permissions']:
+                    found = True
+                    if 'dangerous' in cat['description'].lower():
+                        dangerous += 1
+                    elif 'signature' in cat['description'].lower():
+                        signature += 1
+                    break
+            
+            if not found:
+                unknown += 1
+        
+        return (
+            round(dangerous / total, 4),
+            round(signature / total, 4),
+            round(unknown / total, 4)
+        )
+    
+    except Exception as e:
+        print(f"Error processing APK: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def apply_rules(k4, k5, k10):
+    """Применяет 5 правил детекции"""
+    rule1 = 1 if (k5 >= 0.015) and (k10 <= 0.23) else 0
+    rule2 = 1 if ((k5 >= 0.02) or (k4 >= 0.35)) and (k10 <= 0.20) else 0
+    rule3 = 1 if ((k5 > 0.01) and (k10 < 0.25)) or ((k4 > 0.3) and (k10 < 0.18)) else 0
+    rule4 = 1 if k5 > 0.005 else 0
+    rule5 = 1 if (k4 > 0.25) and (k5 > 0.008) and (k10 < 0.22) else 0
+    
+    return [rule1, rule2, rule3, rule4, rule5]
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python3 detector.py <path/to/apk> <path/to/categories.json>", file=sys.stderr)
+        sys.exit(1)
+    
+    apk_path = sys.argv[1]
+    json_path = sys.argv[2]
+    
+    categories = load_categories(json_path)
+    k4, k5, k10 = calculate_coefficients(apk_path, categories)
+    rules_result = apply_rules(k4, k5, k10)
+    
+    filename = apk_path.split('/')[-1]
+    print(f"{filename} {' '.join(map(str, rules_result))}")
+
+if __name__ == "__main__":
+    main()
