@@ -1,0 +1,63 @@
+from androguard.misc import AnalyzeAPK
+import json
+
+def load_permission_categories(json_path):
+    """Загружает только нужные категории из JSON"""
+    with open(json_path) as f:
+        data = json.load(f)
+        return {
+            'dangerous': [p for cat in data.values() 
+                         if 'dangerous' in cat['description'].lower() 
+                         for p in cat['permissions']],
+            'signature': [p for cat in data.values() 
+                         if 'signature' in cat['description'].lower() 
+                         for p in cat['permissions']],
+            'all_known': [p for cat in data.values() 
+                         for p in cat['permissions']]
+        }
+
+def analyze_apk(apk_path, categories):
+    """Анализирует APK и выводит запрошенную информацию с количеством разрешений"""
+    try:
+        a, _, _ = AnalyzeAPK(apk_path)
+        permissions = a.get_permissions()
+        
+        print(f"\nАнализ APK: {apk_path}")
+        
+        # Dangerous разрешения
+        dangerous = [p for p in permissions if p in categories['dangerous']]
+        print(f"\n=== Dangerous разрешения ({len(dangerous)} найдено) ===")
+        print('\n'.join(dangerous) if dangerous else "Нет dangerous разрешений")
+        
+        # Signature разрешения
+        signature = [p for p in permissions if p in categories['signature']]
+        print(f"\n=== Signature разрешения ({len(signature)} найдено) ===")
+        print('\n'.join(signature) if signature else "Нет signature разрешений")
+        
+        # Unknown разрешения
+        unknown = [p for p in permissions if p not in categories['all_known']]
+        print(f"\n=== Unknown разрешения ({len(unknown)} найдено) ===")
+        print('\n'.join(unknown) if unknown else "Нет unknown разрешений")
+        
+        # Возвращаем статистику
+        return {
+            'dangerous_count': len(dangerous),
+            'signature_count': len(signature),
+            'unknown_count': len(unknown),
+            'total_permissions': len(permissions)
+        }
+        
+    except Exception as e:
+        print(f"Ошибка анализа {apk_path}: {str(e)}")
+        return None
+
+if __name__ == "__main__":
+    # Настройки
+    PERMISSIONS_JSON = "android_permissions.json"
+    APK_PATH = "test.apk"  # Замените на путь к вашему APK
+    
+    # Загрузка категорий
+    categories = load_permission_categories(PERMISSIONS_JSON)
+    
+    # Анализ APK
+    analyze_apk(APK_PATH, categories)
