@@ -1,0 +1,102 @@
+from androguard.core.apk import APK
+import json
+import sys
+import os
+
+def load_categories(json_path):
+    """Загружает категории разрешений из JSON файла"""
+    with open(json_path) as f:
+        return json.load(f)
+
+def calculate_coefficients(apk_path, categories):
+    """Вычисляет коэффициенты K4, K5, K10 для APK-файла"""
+    try:
+        apk = APK(apk_path)
+        permissions = apk.get_permissions() or []
+        total = len(permissions)
+        
+        if total == 0:
+            return 0.0, 0.0, 0.0
+        
+        dangerous = 0
+        signature = 0
+        unknown = 0
+        
+        for perm in permissions:
+            found = False
+            for cat in categories.values():
+                if perm in cat['permissions']:
+                    found = True
+                    if 'dangerous' in cat['description'].lower():
+                        dangerous += 1
+                    elif 'signature' in cat['description'].lower():
+                        signature += 1
+                    break
+            
+            if not found:
+                unknown += 1
+        
+        return (
+            round(dangerous / total, 4),
+            round(signature / total, 4),
+            round(unknown / total, 4)
+        )
+    
+    except Exception as e:
+        print(f"Error processing {apk_path}: {e}", file=sys.stderr)
+        return None
+
+def apply_rules(k4, k5, k10):
+    """Применяет 5 правил детекции"""
+    rule1 = 1 if (k5 >= 0.015) and (k10 <= 0.23) else 0
+    rule2 = 1 if ((k5 >= 0.02) or (k4 >= 0.35)) and (k10 <= 0.20) else 0
+    rule3 = 1 if ((k5 > 0.01) and (k10 < 0.25)) or ((k4 > 0.3) and (k10 < 0.18)) else 0
+    rule4 = 1 if k5 > 0.005 else 0
+    rule5 = 1 if (k4 > 0.25) and (k5 > 0.008) and (k10 < 0.22) else 0
+    
+    return [rule1, rule2, rule3, rule4, rule5]
+
+def process_folder(folder_path, categories, output_file):
+    """Обрабатывает все APK в папке и записывает результаты"""
+    rule_sums = [0, 0, 0, 0, 0]
+    
+    with open(output_file, 'w') as f_out:
+        for filename in os.listdir(folder_path):
+            if filename.endswith('.apk'):
+                apk_path = os.path.join(folder_path, filename)
+                coefficients = calculate_coefficients(apk_path, categories)
+                
+                if coefficients:
+                    k4, k5, k10 = coefficients
+                    rules_result = apply_rules(k4, k5, k10)
+                    
+                    # Обновляем суммы
+                    for i in range(5):
+                        rule_sums[i] += rules_result[i]
+                    
+                    # Записываем строку результата
+                    f_out.write(f"{filename} {' '.join(map(str, rules_result))}\n")
+    
+    # Добавляем строку с суммами
+    with open(output_file, 'a') as f_out:
+        f_out.write(f"{' '.join(map(str, rule_sums))}\n")
+
+def main():
+    if len(sys.argv) != 4:
+        print("Usage: python3 batch_detector.py <apk_folder> <categories.json> <output.txt>", file=sys.stderr)
+        sys.exit(1)
+    
+    folder_path = sys.argv[1]
+    json_path = sys.argv[2]
+    output_file = sys.argv[3]
+    
+    if not os.path.isdir(folder_path):
+        print(f"Error: {folder_path} is not a valid directory", file=sys.stderr)
+        sys.exit(1)
+    
+    categories = load_categories(json_path)
+    process_folder(folder_path, categories, output_file)
+    print(f"Results saved to {output_file}")
+
+if __name__ == "__main__":
+    main()
