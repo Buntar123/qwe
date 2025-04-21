@@ -1,0 +1,94 @@
+import os
+import json
+import pandas as pd
+from androguard.core.apk import APK
+
+def load_categories(json_path):
+    """Загружает категории разрешений из JSON"""
+    with open(json_path) as f:
+        return json.load(f)
+
+def analyze_apk(apk_path, categories):
+    """Анализирует APK и возвращает коэффициенты"""
+    try:
+        apk = APK(apk_path)
+        perms = apk.get_permissions() or []
+        total = len(perms)
+        
+        if total == 0:
+            return 0.0, 0.0, 0.0
+        
+        dangerous = 0
+        signature = 0
+        unknown = 0
+        
+        for perm in perms:
+            found = False
+            for cat in categories.values():
+                if perm in cat['permissions']:
+                    found = True
+                    if 'dangerous' in cat['description'].lower():
+                        dangerous += 1
+                    elif 'signature' in cat['description'].lower():
+                        signature += 1
+                    break
+            
+            if not found:
+                unknown += 1
+        
+        k4 = round(dangerous / total, 4)
+        k5 = round(signature / total, 4)
+        k10 = round(unknown / total, 4)
+        
+        return k4, k5, k10
+    
+    except Exception as e:
+        print(f"Ошибка обработки {apk_path}: {str(e)}")
+        return None
+
+def process_folder(folder_path, label, categories, output_file):
+    """Обрабатывает все APK в папке"""
+    results = []
+    
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.apk'):
+            apk_path = os.path.join(folder_path, filename)
+            coeffs = analyze_apk(apk_path, categories)
+            
+            if coeffs:
+                k4, k5, k10 = coeffs
+                results.append({
+                    'filename': filename,
+                    'k4': k4,
+                    'k5': k5,
+                    'k10': k10,
+                    'is_malicious': label
+                })
+    
+    # Сохраняем результаты в CSV
+    df = pd.DataFrame(results)
+    df.to_csv(output_file, mode='a', header=not os.path.exists(output_file), index=False)
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--malicious", required=True, help="Папка с вредоносными APK")
+    parser.add_argument("--legitimate", required=True, help="Папка с легитимными APK")
+    parser.add_argument("--categories", required=True, help="JSON с категориями разрешений")
+    parser.add_argument("--output", default="apk_data.csv", help="Выходной CSV-файл")
+    args = parser.parse_args()
+    
+    # Загрузка категорий
+    categories = load_categories(args.categories)
+    
+    # Очистка старого файла (если есть)
+    if os.path.exists(args.output):
+        os.remove(args.output)
+    
+    # Обработка APK
+    process_folder(args.malicious, 1, categories, args.output)  # Вредоносные: is_malicious=1
+    process_folder(args.legitimate, 0, categories, args.output) # Легитимные: is_malicious=0
+    
+    print(f"Данные сохранены в {args.output}")
+    print(f"Всего обработано: {len(pd.read_csv(args.output))} APK")
