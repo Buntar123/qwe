@@ -1,0 +1,32 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics import roc_auc_score
+from bayes_opt import BayesianOptimization
+
+# Загрузка данных
+data = pd.read_csv("apk_data.csv")
+
+# Целевая функция для оптимизации
+def evaluate_weights(w4, w5, w10):
+    # Взвешенная сумма коэффициентов
+    scores = w4 * data["k4"] + w5 * data["k5"] - w10 * data["k10"]
+    # Метрика качества: AUC-ROC (чем ближе к 1, тем лучше)
+    return roc_auc_score(data["is_malicious"], scores)
+
+# Настройка оптимизатора
+optimizer = BayesianOptimization(
+    f=evaluate_weights,
+    pbounds={
+        "w4": (0.5, 2.0),  # Допустимый диапазон для веса K4
+        "w5": (1.0, 3.0),   # K5 важнее, поэтому нижняя граница выше
+        "w10": (0.1, 1.5)   # K10 "штрафной", ограничиваем влияние
+    },
+    random_state=42
+)
+
+# Запуск оптимизации (30-50 итераций)
+optimizer.maximize(init_points=10, n_iter=40)
+
+# Лучшие веса
+best_weights = optimizer.max["params"]
+print(f"Оптимальные веса: K4={best_weights['w4']:.2f}, K5={best_weights['w5']:.2f}, K10={best_weights['w10']:.2f}")
