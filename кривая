@@ -1,0 +1,73 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+
+def load_data(malicious_file, legitimate_file):
+    """Загружает данные из файлов и возвращает метки и scores."""
+    y_true = []
+    y_scores = []
+
+    # Обработка вредоносных APK (label = 1)
+    with open(malicious_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            rules = list(map(int, parts[1:6]))  # 5 проверок
+            y_true.append(1)  # метка для вредоносных
+            y_scores.append(sum(rules))  # сумма срабатываний
+
+    # Обработка легитимных APK (label = 0)
+    with open(legitimate_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            rules = list(map(int, parts[1:6]))  # 5 проверок
+            y_true.append(0)  # метка для легитимных
+            y_scores.append(sum(rules))  # сумма срабатываний
+
+    return np.array(y_true), np.array(y_scores)
+
+def plot_roc_curve(y_true, y_scores):
+    """Строит ROC-кривую и выводит AUC."""
+    fpr, tpr, thresholds = roc_curve(y_true, y_scores, pos_label=1)
+    roc_auc = auc(fpr, tpr)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, 
+             label=f'ROC curve (AUC = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate (FPR)')
+    plt.ylabel('True Positive Rate (TPR)')
+    plt.title('ROC-кривая для детектирования вредоносных APK')
+    plt.legend(loc="lower right")
+    plt.grid(True)
+    plt.show()
+
+    # Дополнительная информация о порогах
+    print("\nПороги и соответствующие TPR/FPR:")
+    for i, threshold in enumerate(thresholds):
+        print(f"Порог: {threshold:.2f} -> TPR = {tpr[i]:.2f}, FPR = {fpr[i]:.2f}")
+
+if __name__ == "__main__":
+    # Укажите пути к вашим файлам
+    malicious_file = "malicious_apk_results.txt"  # файл с вредоносными APK
+    legitimate_file = "legitimate_apk_results.txt"  # файл с легитимными APK
+
+    # Загрузка данных
+    y_true, y_scores = load_data(malicious_file, legitimate_file)
+
+    # Построение ROC-кривой
+    plot_roc_curve(y_true, y_scores)
+
+    # Дополнительный анализ: точность, полнота, F1-мера
+    from sklearn.metrics import classification_report
+
+    # Оптимальный порог (Youden's J statistic)
+    fpr, tpr, thresholds = roc_curve(y_true, y_scores, pos_label=1)
+    optimal_idx = np.argmax(tpr - fpr)
+    optimal_threshold = thresholds[optimal_idx]
+
+    print(f"\nОптимальный порог: {optimal_threshold:.2f}")
+    y_pred = (y_scores >= optimal_threshold).astype(int)
+    print("\nОтчет по классификации:")
+    print(classification_report(y_true, y_pred, target_names=["Легитимные", "Вредоносные"]))
